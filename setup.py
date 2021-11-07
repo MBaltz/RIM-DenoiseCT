@@ -1,52 +1,73 @@
 from RIM import RIM
 
-from dival.datasets.standard import get_standard_dataset
-from dival import get_reference_reconstructor
-
+import tensorflow as tf
 import numpy as np
 import cv2
 
-model_rim = RIM(10, (362, 362), (362362))
+from dival.datasets.standard import get_standard_dataset
+from dival import get_reference_reconstructor
 
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+if tf.test.gpu_device_name(): print('GPU found')
+else: print("No GPU found")
+
+
+batch_size = 2
 impl = "astra_cpu"
+epocas = 20
+qnt_amostras = 1
+numero_recorrencias = 15
+# mse = tf.keras.losses.MeanSquaredError()
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+
+def loss_mse_manual(target, predicted):
+    return tf.reduce_mean(tf.square(target - predicted))
+
 dataset = get_standard_dataset('lodopab', impl=impl)
-print(f"Checando LoDoPaB-CT: {dataset.check_for_lodopab()}")
-keras_generator = dataset.create_keras_generator("train", 1, shuffle=True)
+print(f"\n\nChecando LoDoPaB-CT: {dataset.check_for_lodopab()}\n")
+keras_generator = dataset.create_keras_generator("train", batch_size=batch_size, shuffle=False)
 
 rec = get_reference_reconstructor("fbp", "lodopab", impl=impl)
 
-# x, y = keras_generator.__getitem__(0)
-# print(x.shape, y.shape) # (1, 1000, 513) (1, 362, 362)
+model_rim = RIM(numero_recorrencias, (batch_size, 1000, 513))
 
-for i in range(2):
 
-    x, y = keras_generator.__getitem__(i)
-    x, y = x[0], y[0]
-    rec_x = rec.reconstruct(x)
+for epoca in range(epocas):
+    for i_batch in range(qnt_amostras):
+        x, y = keras_generator.__getitem__(i_batch) # [(batch_size, 1000, 513), (batch_size, 362, 362)]
+ 
+        # Normaliza entre 0 e 1
+        x -= np.min(x); x /= np.max(x)
+        y -= np.min(x); y /= np.max(x)
+        
+        # Reconstrói Sinogramas
+        x = np.array([rec.reconstruct(i_x) for i_x in x])
+        x = tf.expand_dims(x, axis=-1) # (batch_size, 1000, 513, 1)
+        y = tf.expand_dims(y, axis=-1) # (batch_size, 1000, 513, 1)
 
-    rec_x -= np.min(rec_x)
-    rec_x /= np.max(rec_x)
-    
-    x -= np.min(x)
-    x /= np.max(x)
+        # Salva operações (execução da rede) para derivar e att os pesos
+        with tf.GradientTape() as tape:
+            prediction = model_rim(x, training=True)
+            loss = loss_mse_manual(y, prediction)
 
-    print(f"Min_rec: {format(np.min(rec_x), '.10f')}")
-    print(f"Min_rec: {format(np.max(rec_x), '.10f')}")
+        for i_img in range(batch_size):
+            print(f"Epoca {epoca},\ti_batch {i_batch}, Amostra {i_img} \tLoss {loss_mse_manual(y[i_img], prediction[i_img]).numpy()}")
+        print(f"Epoca {epoca},\ti_batch {i_batch}\tLoss {loss.numpy()}\n-----------")
+        
+        # Calcula gradiente
+        grad = tape.gradient(loss, model_rim.trainable_weights)
+        # Atualiza os pesos
+        optimizer.apply_gradients(zip(grad, model_rim.trainable_weights))
 
-    print(f"Min_x: {format(np.min(x), '.10f')}")
-    print(f"Max_x: {format(np.max(x), '.10f')}")
+        for i_img in range(batch_size):
+            y_cv2 = cv2.normalize(np.float64(y[i_img]), None, alpha = 0, beta = 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32F)
+            # cv2.imwrite('gt.png', i_gt)
+            
+            x_cv2 = cv2.normalize(np.float64(x[i_img]), None, alpha = 0, beta = 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32F)
+            # cv2.imwrite('aux/x_'+str(i)+'.png', x_cv2)
+            
+            precic_rec = cv2.normalize(np.float64(prediction[i_img]), None, alpha = 0, beta = 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32F)
 
-    print(f"Min_y: {format(np.min(y), '.10f')}")
-    print(f"Max_y: {format(np.max(y), '.10f')}")
-
-    print()
-
-    i_x = cv2.normalize(np.float64(x), None, alpha = 0, beta = 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32F)
-    cv2.imwrite('aux/x_'+str(i)+'.png', i_x)
-    
-    i_gt = cv2.normalize(np.float64(y), None, alpha = 0, beta = 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32F)
-    # cv2.imwrite('gt.png', i_gt)
-    i_rec = cv2.normalize(np.float64(rec_x), None, alpha = 0, beta = 255, norm_type = cv2.NORM_MINMAX, dtype = cv2.CV_32F)
-
-    vis = np.concatenate((i_rec, i_gt), axis=1)
-    cv2.imwrite('aux/concat_'+str(i)+'.png', vis)
+            vis = np.concatenate((y_cv2, x_cv2, precic_rec), axis=1)
+            cv2.imwrite("aux/concat_epo"+str(epoca)+"_amostra"+str(i_img)+".png", vis)
