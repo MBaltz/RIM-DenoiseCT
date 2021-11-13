@@ -128,4 +128,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-aux/
+
+
+aux*
+estudo_hiperparametros/

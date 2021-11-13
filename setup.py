@@ -1,14 +1,14 @@
-from RIM import RIM
+from Network.RIM import RIM
 
 import tensorflow as tf
 import numpy as np
 import cv2
 
-from dival.datasets.standard import get_standard_dataset
-from dival import get_reference_reconstructor
-
 import glob
 import os
+
+from dival.datasets.standard import get_standard_dataset
+from dival import get_reference_reconstructor
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -21,10 +21,11 @@ for a in glob.glob("./aux/*.png"):
     os.remove(a)
 
 batch_size = 1
+seed = 1
 impl = "astra_cpu"
-epocas = 30
-qnt_amostras = 4
-numero_recorrencias = 15
+epocas = 5
+qnt_amostras = 4 # amostras por época
+numero_recorrencias = 4
 mse = tf.keras.losses.MeanSquaredError()
 # mse = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.SUM)
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.00007)
@@ -37,8 +38,12 @@ rec = get_reference_reconstructor("fbp", "lodopab", impl=impl)
 
 model_rim = RIM(numero_recorrencias, (batch_size, 362, 362, 1))
 
+if seed != None:
+    tf.random.set_seed(seed)
+
 
 for epoca in range(epocas):
+    list_loss = []
     for i_amostra in range(qnt_amostras):
         x, y = keras_generator.__getitem__(i_amostra) # [(batch_size, 1000, 513), (batch_size, 362, 362)]
         # Reconstrói Sinogramas
@@ -68,7 +73,6 @@ for epoca in range(epocas):
         optimizer.apply_gradients(zip(grad, model_rim.trainable_weights))
 
 
-
         # Salva as imagens
         for i_batch in range(batch_size):
             y_cv2 = np.squeeze(np.array(y[i_batch]*255), axis=-1)
@@ -84,3 +88,11 @@ for epoca in range(epocas):
 
             vis = np.concatenate((y_cv2, x_cv2, precic_rec), axis=1)
             cv2.imwrite("aux/concat_epo"+str(epoca)+"_amostra"+str(i_amostra)+"_batch"+str(i_batch)+".png", vis)
+
+
+        list_loss.append(loss.numpy())
+
+    print(f"Média loss epoca {epoca}: {np.sum(list_loss)/len(list_loss)}")
+
+# seed = 1: Média loss epoca 4: 0.0008389844442717731
+# seed = 1: Média loss epoca 4: 0.0008389844442717731

@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from ConvGRU2D import ConvGRU2D
-import cv2
+from Network.ConvGRU2D.ConvGRU2D import ConvGRU2D
 
 class RNN(tf.keras.Model):
     def __init__(self, in_size):
@@ -13,11 +12,11 @@ class RNN(tf.keras.Model):
             padding="same", activation="tanh", name="hidden_1_conv")
 
         self.hidden_2_rnn = ConvGRU2D(
-            filters=16, kernel_size=3, strides=1, padding="same",
+            filters=256, kernel_size=3, strides=1, padding="same",
             return_state=False, name="hidden_2_rnn")
         
         self.hidden_3_convTranspose = tf.keras.layers.Conv2DTranspose(
-            filters=4, kernel_size=3, strides=2, padding="same",
+            filters=64, kernel_size=3, strides=2, padding="same",
             activation="tanh", name="hidden_3_convTranspose")
 
         self.hidden_4_conv = tf.keras.layers.Conv2D(
