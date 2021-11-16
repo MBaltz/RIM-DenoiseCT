@@ -1,0 +1,6 @@
+[submodule "Dataset/LoDoPaBCT_Reconstructor"]
+	path = Dataset/LoDoPaBCT_Reconstructor
+	url = git@github.com:MBaltz/LoDoPaBCT_Reconstructor.git
+[submodule "Network/ConvGRU2D"]
+	path = Network/ConvGRU2D
+	url = git@github.com:KoertS/ConvGRU2D.git
