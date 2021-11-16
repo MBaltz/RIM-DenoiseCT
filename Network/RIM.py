@@ -3,9 +3,9 @@ import numpy as np
 from Network.ConvGRU2D.ConvGRU2D import ConvGRU2D
 
 class RNN(tf.keras.Model):
-    def __init__(self, in_size):
+    def __init__(self):
         super(RNN, self).__init__()
-        self.in_size = in_size
+
     def build(self, input_shape):
         self.hidden_1_conv = tf.keras.layers.Conv2D(
             filters=64, kernel_size=3, strides=2,
@@ -20,21 +20,19 @@ class RNN(tf.keras.Model):
             activation="tanh", name="hidden_3_convTranspose")
 
         self.hidden_4_conv = tf.keras.layers.Conv2D(
-            filters=1, kernel_size=3, strides=1,
-            padding="same", name="hidden_4_conv")
+            filters=1, kernel_size=3, strides=1, padding="same",
+            activation="tanh", name="hidden_4_conv")
 
 
-    def call(self, x, grad, training=True):
-        # shapes: x and grad = (batch_size, 1000, 513, 1)
-        x = tf.squeeze(tf.stack([x, grad], axis=-1), axis=-2)
+    def call(self, x_grad, training=True):
+        # x_grad.shape = (batch_size, 362, 362, 1)
 
-        out = self.hidden_1_conv(x)
+        out = self.hidden_1_conv(x_grad)
         out = tf.expand_dims(out, axis=1)
         out = self.hidden_2_rnn(out)
         out = self.hidden_3_convTranspose(out)
         out = self.hidden_4_conv(out) # tanh pois será somado
-
-        # valor que será somado à x e gerando x_t+1
+        # Valor que será somado à x e gerando x_t+1
         return out
 
 
@@ -44,27 +42,26 @@ class RIM(tf.keras.Model):
     def __init__(self, qnt_recurrence, in_size):
         super(RIM, self).__init__()
         self.qnt_recurrence = qnt_recurrence
-        self.in_size = in_size
-        # Dimensão de entrada é (batch_size, x, y)
 
     def build(self, input_shape):
-        self.rnn = RNN(self.in_size)
+        self.rnn = RNN((input_shape[0], input_shape[1], input_shape[2], 2))
 
-    def call(self, x, training=True):
-        # shape de x = (batch_size, 1000, 513, 1)
-
-        # Copia x para salvar a imagem ruidosa primária
+    def call(self, x, training=True): # x.shape = (batch_size, 362, 362, 1)
+        
+        # Salva a imagem ruidosa primária
         noised = tf.Variable(x, trainable=False)
 
         for r in range(self.qnt_recurrence):
             delta_x_noised = self.__gradient_x_noised(noised, x)
+            
+            # x/grad.shape = (batch_size, 362, 362, 1)
+            x = tf.squeeze(tf.stack([x, delta_x_noised], axis=-1), axis=-2)
 
-            to_att_x = self.rnn(x, delta_x_noised)
-
+            to_att_x = self.rnn(x)
             x = x + to_att_x
-            print(r, np.min(x), np.max(x))
-            # após somar surgem grandes valores ou negativos
-            x = tf.keras.activations.relu(x)
+
+            # Após somar pode surgir valores negativos ou grandes positivos
+            x = tf.keras.activations.relu(x) #TODO: testar dnv usar sigmoid
         return x
 
     def __gradient_x_noised(self, noised, x):
