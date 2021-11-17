@@ -1,8 +1,9 @@
+# from tensorflow import keras
 import tensorflow as tf
 import numpy as np
 from Network.ConvGRU2D.ConvGRU2D import ConvGRU2D
 
-class RNN(tf.keras.Model):
+class RNN(tf.keras.layers.Layer):
     def __init__(self):
         super(RNN, self).__init__()
 
@@ -39,12 +40,12 @@ class RNN(tf.keras.Model):
 
 class RIM(tf.keras.Model):
 
-    def __init__(self, qnt_recurrence, in_size):
+    def __init__(self, qnt_recurrence):
         super(RIM, self).__init__()
         self.qnt_recurrence = qnt_recurrence
 
     def build(self, input_shape):
-        self.rnn = RNN((input_shape[0], input_shape[1], input_shape[2], 2))
+        self.rnn = RNN()
 
     def call(self, x, training=True): # x.shape = (batch_size, 362, 362, 1)
         
@@ -54,10 +55,11 @@ class RIM(tf.keras.Model):
         for r in range(self.qnt_recurrence):
             delta_x_noised = self.__gradient_x_noised(noised, x)
             
-            # x/grad.shape = (batch_size, 362, 362, 1)
-            x = tf.squeeze(tf.stack([x, delta_x_noised], axis=-1), axis=-2)
 
-            to_att_x = self.rnn(x)
+            # x/grad.shape = (batch_size, 362, 362, 1)
+            x_grad = tf.squeeze(tf.stack([x, delta_x_noised], axis=-1), axis=-2)
+
+            to_att_x = self.rnn(x_grad)
             x = x + to_att_x
 
             # Após somar pode surgir valores negativos ou grandes positivos
